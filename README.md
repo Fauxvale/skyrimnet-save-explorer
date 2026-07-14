@@ -1,6 +1,6 @@
 # SkyrimNet Save Explorer
 
-**🔎 [Live example — "The Adventures of Jules"](https://fauxvale.github.io/skyrimnet-save-explorer.html)** — see a full explorer built from a real playthrough.
+**🔎 [Live example — "The Adventures of Jules"](https://fauxvale.github.io/The-Adventures-of-Jules.html)** — see a full explorer built from a real playthrough.
 
 A [Claude Code](https://claude.com/claude-code) skill that turns a Skyrim playthrough using the
 **SkyrimNet** and **IntelEngine** AI mods into a single, self-contained, offline HTML document — an
