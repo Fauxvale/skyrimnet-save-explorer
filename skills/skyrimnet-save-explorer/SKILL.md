@@ -105,8 +105,18 @@ Do these checks yourself before delivering:
 - Confirm it opens offline; **render it** (a headless browser is ideal) and **visit every route** —
   check each view populates, with no empty panels, no `undefined`, no `NaN`, and no console errors (a
   blocked Google Fonts request offline is expected and fine). Visiting one view proves nothing about the
-  others; if you script the sweep, confirm the tool is really changing route — a mangled hash that silently
-  re-renders the landing view will pass every check while testing nothing.
+  others; if you script the sweep, confirm the tool is really changing route — a mangled hash, or a
+  navigation to the URL you are already on, will silently re-render the current view and pass every check
+  while testing nothing.
+- **Then look at every view.** Screenshot each route and actually read the picture. Every other check in
+  this list is negative — absence of errors, absence of overflow — and **layout breakage is none of those
+  things**, so it sails straight through them. A real regression shipped through this exact list: a war
+  panel whose belligerent columns collided with the sidebar's CSS class inherited `height:100vh` and
+  rendered ~3.5× too tall, with the "Versus" mark stranded in 800px of dead space and the sidebar's border
+  drawn down the middle of the panel. No console error, no `undefined`, no horizontal overflow, every
+  interaction working. Only looking finds that. Two smells worth checking by measurement as well as by
+  eye: **a container far taller than the content it holds** (something is inheriting a height it
+  shouldn't), and **a view whose text length is implausibly short** for the records it should be showing.
 - Confirm every interaction works: sidebar routing and the browser **back button**; the UMAP/PCA toggle;
   the constellation's actor chips dimming stars; **memory search** (hits highlighted, live count correct,
   and markup in the query rendered as text rather than injected); type/mind/sort filters; **paging**;
