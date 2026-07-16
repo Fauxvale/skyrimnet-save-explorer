@@ -9,17 +9,24 @@ Build the user a **SkyrimNet Save Explorer**: one self-contained, offline HTML f
 Skyrim AI-mod playthrough (the **SkyrimNet** and **IntelEngine** mods) into an elegant, interactive
 "save explorer" — an illuminated field journal for a single character's run.
 
-The finished page has **two tabs**:
+The finished page is an **app shell**: a sidebar on the left, one view at a time in the content column,
+addressed by hash routes. It lands on an **Overview** — the masthead, the headline stats, and panels
+summarising each section — and the sidebar groups the rest:
 
 - **SkyrimNet** — the character's lived experience: an event timeline, an interactive "constellation" of
-  memories, the memories themselves, a kill ledger, a diary page, and OmniSight field notes (a distilled
+  memories, the memories themselves, a kill ledger, a diary, and OmniSight field notes (a distilled
   "portrait of the land" + matched capture images), plus any other notable story beats found in the logs.
 - **IntelEngine** — the political layer: faction relationships, a chronicle of provocations, off-screen
   gossip, and — **only if the save actually has one** — an ongoing war and its battles.
 
-Every section is collapsible, there is a floating table of contents that reflows into a mobile bar +
-overlay on narrow screens, and everything — name, in-game day count, every count and label — is derived
-from the user's uploaded data.
+Each view owns its own search, filters and paging; a view with no data is left out of the sidebar
+entirely. Everything — name, in-game day count, every count and label — is derived from the user's
+uploaded data.
+
+> **Not a long scroll.** A real save runs to hundreds of memories and captures. Do not render every table
+> onto one page, and do not copy the shell of an older example: the two-tab bar, the floating
+> roman-numeral TOC, and the collapsible sections are gone. `references/page-build.md` explains what
+> replaced them and why.
 
 ## Non-negotiable principles
 
@@ -45,17 +52,17 @@ don't:
 
 - **Collect one file at a time.** After each upload, inspect it and report what you found (row counts,
   the character's name, the date range, anything missing) *before* asking for the next file.
-- **Offer a new section when something notable turns up.** If a file reveals a major world event, quest
+- **Offer a new view when something notable turns up.** If a file reveals a major world event, quest
   arc, milestone, or unusual populated table the standard layout doesn't cover, tell the user and ask
-  whether they'd like a dedicated section for it. Only add sections they approve.
+  whether they'd like a dedicated view for it. Only add views they approve.
 - **Total Spend is opt-in and user-supplied.** Before finalizing the header, ask whether they want a
   "Total Spend" stat (real-world money spent running the playthrough — API/LLM calls, not in-game gold).
   If yes, ask how much in real dollars and use their figure verbatim. If no, skip it entirely.
 - **Ask which theme before styling anything** — the Illuminated Manuscript preset, or the user's own
   described theme (invoke a design skill if one is available).
 - **Detect and announce whether the save has a war.** After the IntelEngine DB arrives, tell the user
-  plainly whether there's a war. If not, the war and battle sections are omitted entirely (no empty
-  panels), and the remaining IntelEngine sections renumber.
+  plainly whether there's a war. If not, the war and battle views are omitted entirely — no empty panels,
+  and no sidebar entries for them.
 - **Ask before embedding OmniSight screenshots.** If the user wants image embeds, ask them to upload the
   screenshots as **one archive** (not individual images), then place them in `omnisight-images/`.
 
@@ -86,28 +93,36 @@ field and the full 5-step projection recipe.
 
 ### Phase 3 — Build the page → `references/page-build.md`
 
-Produce the single self-contained `.html`. `references/page-build.md` covers the shared structure
-(header, tabs, collapsible sections, the floating/mobile TOC), the theme fork and the Illuminated
-Manuscript preset, and the exact spec for every section in both tabs.
+Produce the single self-contained `.html`. `references/page-build.md` covers the app-shell structure
+(sidebar, hash-routed views, the Overview landing view, the mobile drawer), the rules every view obeys
+(paging, lazy images, lightbox, searchable filters, escaping model text, showing data gaps), the theme
+fork and the Illuminated Manuscript preset, and the exact spec for every view.
 
 ### Phase 4 — Verify before handing over
 
 Do these checks yourself before delivering:
 
-- Confirm it opens offline; **render it** (a headless browser is ideal) and check every section
-  populates — no empty panels, no `undefined`, `NaN`, or console errors (a blocked Google Fonts request
-  offline is expected and fine). If OmniSight image embeds were requested, confirm the images are present
-  in `omnisight-images/` and render in the cards.
-- Confirm every interaction works: tab switching; the UMAP/PCA toggle; actor/type/sort filters and the
-  live count; diary flip; OmniSight show-more; whisper filters; **every section collapses and
-  re-expands**; and the **Constellation's actor chips stay visible and keep filtering the memory list
-  while that section is collapsed**.
-- Confirm the layout is clean: **no horizontal overflow** at desktop and mobile widths; on desktop the
-  floating TOC never overlaps the content and the content re-centers on wide screens; on narrow screens
-  the mobile TOC bar + hamburger overlay work.
+- Confirm it opens offline; **render it** (a headless browser is ideal) and **visit every route** —
+  check each view populates, with no empty panels, no `undefined`, no `NaN`, and no console errors (a
+  blocked Google Fonts request offline is expected and fine). Visiting one view proves nothing about the
+  others; if you script the sweep, confirm the tool is really changing route — a mangled hash that silently
+  re-renders the landing view will pass every check while testing nothing.
+- Confirm every interaction works: sidebar routing and the browser **back button**; the UMAP/PCA toggle;
+  the constellation's actor chips dimming stars; **memory search** (hits highlighted, live count correct,
+  and markup in the query rendered as text rather than injected); type/mind/sort filters; **paging**;
+  the OmniSight show-all; the **capture lightbox** (opens, Left/Right move, Escape closes, focus returns);
+  and the whisper filters.
+- Confirm every capture image resolves — count the files in `omnisight-images/` against the payload and
+  check the lightbox shows a decoded image, not a broken reference.
+- Confirm the layout is clean: **no horizontal overflow** at desktop and mobile widths; on narrow screens
+  the drawer opens, the scrim and Escape close it, and the sidebar never traps the reader.
 - Confirm the character name, day count, "The Adventures of …" title, and every stat came from the
   user's data — not any example — and the OmniSight summary is grounded in their actual captures.
-- **Tell the user plainly what you had to fall back on** (e.g. "UMAP not installed, used t-SNE", "no log
-  provided, gossip omitted", "no OmniSight images provided, text-only capture cards") rather than
-  papering over gaps.
+- Confirm **no record was silently dropped**: undated memories appear in their own group, unplaceable
+  captures have a home, and any notice states counts you actually computed.
+- **Tell the user plainly what you had to fall back on and what the data couldn't support** — e.g. "UMAP
+  not installed, used t-SNE"; "no log provided, gossip omitted"; "no OmniSight images provided, text-only
+  capture cards"; "6 memories carry a real-world timestamp instead of the in-game clock and 1 has none,
+  so 7 are grouped as Undated". Report the real numbers from their save, not these examples. Papering over
+  a gap is worse than the gap.
 - Then deliver the finished `.html` file.

@@ -27,8 +27,9 @@ Build the JSON payloads to embed in the page. Derive everything from the user's 
   - **Followers & tasks** (grey): anything else
 - **`memories`** — an array; for each memory: `content`, `actor` (resolved name via `uuid_mappings`),
   `emotion`, `location`, `imp` (= `importance_score`), `type` (= `memory_type`), `day` (an in-game day
-  label from `game_time`/related event), `gt` (raw `game_time`, for chronological sorting), and 2-D
-  coordinates `x, y` (PCA) and `ux, uy` (UMAP) — see the projection recipe below.
+  label from `game_time`/related event, or `null` — see **Timestamp hygiene**), `gt` (raw `game_time`,
+  for chronological sorting), and 2-D coordinates `x, y` (PCA) and `ux, uy` (UMAP) — see the projection
+  recipe below.
 - **`edges`** — an array of `[i, j, similarity]`: for each memory, its **2 nearest neighbors** by cosine
   similarity in the full embedding space, with the similarity value.
 - **`leaderboard`** — kills aggregated per killer, ranked by total. Each entry:
@@ -53,6 +54,41 @@ Build the JSON payloads to embed in the page. Derive everything from the user's 
 **Actor colours:** rank actors by memory count; the **top ~5 get distinct colours**, everyone else is
 grey. Reuse this mapping everywhere an actor is coloured (constellation dots, memory rows, leaderboard
 names).
+
+## Timestamp hygiene — check this, don't assume it
+
+`memories.game_time` is supposed to be the in-game clock, and `gt` exists so the page can sort
+chronologically. **In real saves the column mixes units**, and if you pass it through unexamined the page
+sorts wrongly and silently.
+
+Observed in a real 255-memory save: 249 rows carried an in-game clock in the range `0`–`1,281,339`, while
+**6 rows carried a Unix epoch** — `1784014205`, which decodes to a real-world date (the day the page was
+built). Wall-clock had leaked into a game-time field. Those 6 rows plus 1 row with `game_time == 0` were
+**exactly** the rows for which no day label could be resolved: `day is None` ⟺ `gt` unusable.
+
+The important part: **`gt` is not broken, it is contaminated.** Sorting the 249 well-formed rows by `gt`
+reproduced the day order with zero inversions. The fix is to quarantine the outliers, **not** to abandon
+`gt` sorting or invent a different sort key.
+
+So, when building `memories`:
+
+1. **Classify each `game_time`** against the clock the rest of the save uses. Compute the distribution
+   first — don't hardcode a threshold from this document. A value that decodes as a plausible recent
+   real-world Unix timestamp (roughly `> 1e9`, i.e. year 2001+) is wall-clock, not game time; `0`, `NULL`,
+   and non-finite values are missing. Everything else is the in-game clock. The two clusters sit orders of
+   magnitude apart, so the split is unambiguous — but **verify it in the user's data** and say what you
+   found.
+2. **Emit `day: null`** for any memory whose timestamp is unusable. Do not guess a day, do not fall back
+   to the first or last day, and do not drop the memory — its `content` is still real.
+3. **Still emit `gt`** for those rows, so nothing is lost, and let the page quarantine them when sorting
+   (see `page-build.md`, "Be honest about gaps"). Sorting must never place a contaminated row among dated
+   ones.
+4. **Report it to the user** in Phase 4: how many memories are undated, and why (e.g. "6 memories carry a
+   real-world timestamp instead of the in-game clock, 1 has no timestamp — they're grouped as Undated").
+
+Apply the same scepticism to any other time field you rely on. If a join depends on two time values
+agreeing, **check that they do** on the user's actual data before building anything on top of it, and tell
+the user when they don't.
 
 ## Computing the projection (`x,y` / `ux,uy`) and edges
 
@@ -97,7 +133,15 @@ similarity weights, never the raw vectors.
 - **`battles`** — from `war_battles`: location, attacker/defender, result, losses on each side,
   narrative. Empty or omitted when there's no war.
 - **`events`** — from `faction_events`: the provocation chronicle — faction pair, `event_type`,
-  `description`, signed `relation_delta`, ordered by `game_time`.
+  `description`, signed `relation_delta`, ordered by `game_time`. You may carry the raw `game_time`
+  through as a `day`, but see the warning below.
+
+> **IntelEngine's clock is not SkyrimNet's clock.** `faction_events.game_time` is a small numeric day
+> counter (e.g. `3.3` … `15.4`), on a completely different scale from the in-game calendar labels
+> (`"20th of Last Seed"`) that `events_by_day` and `memories[].day` use. **There is no reliable mapping
+> between them in the data.** Do not convert one into the other, do not join IntelEngine events onto the
+> SkyrimNet timeline, and do not present a numeric day as a calendar date. If you emit it, name it for
+> what it is and let the IntelEngine views keep their own order.
 
 ## Gossip payload (`gossipdata`)
 
