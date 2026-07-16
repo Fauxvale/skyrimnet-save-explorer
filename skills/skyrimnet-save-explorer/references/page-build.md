@@ -29,8 +29,19 @@ section its own screen and let the reader choose one.
   hash shows Overview.
 - **View header** — sticky at the top of the content column: a small accent kicker naming the half of the
   journal this view belongs to (e.g. "A SkyrimNet Field Journal" / "An IntelEngine Dispatch"), the view
-  title, and an italic caption saying what the reader is looking at. Overview is the exception — it
-  carries its own masthead, so it needs no view header.
+  title, and an italic caption saying what the reader is looking at. The bar itself spans the full width
+  of the space beside the sidebar — its bottom border and backdrop blur are meant to reach the edge — but
+  its text aligns to the content column, not to the bar. Overview is the exception — it carries its own
+  masthead, so it needs no view header.
+- **Content column** — cap the column (~`1180px` reads well) and **centre it** in the space beside the
+  sidebar. A `max-width` on its own is not enough: without `margin-inline:auto` the column stays pinned
+  left and the surplus piles up as dead space on the right, which is glaring on a wide monitor and easy to
+  miss if you only ever check the page at laptop width. The view header must resolve to the **same** cap
+  and the same horizontal inset, or its title will sit left of the content beneath it on every view. Put
+  the cap on a wrapper *inside* the header rather than on the header itself, so the bar stays full-bleed
+  while its text lines up; with `box-sizing:border-box` that wrapper has to repeat the column's horizontal
+  padding for the two left edges to actually meet. Give the narrow-screen rules the same treatment — if
+  you move the header's padding onto the wrapper, the mobile override has to move with it.
 - **Overview is the landing view.** It must answer "what happened in this run?" without scrolling far:
   - A **masthead** — the monumental title card the journal deserves: italic "The Adventures of", the
     character's name set **large** (uppercase display face), then the italic subtitle. Overview is the
@@ -46,7 +57,9 @@ section its own screen and let the reader choose one.
 - **Narrow screens (≲900px)** — the sidebar becomes an **off-canvas drawer**: a sticky top bar shows the
   current view name and a hamburger; tapping it slides the sidebar in over a scrim. Tapping the scrim,
   choosing an entry, or pressing Escape closes it.
-- Confirm there is **no horizontal overflow** at any width (watch long captions — let them wrap).
+- Confirm there is **no horizontal overflow** at any width (watch long captions — let them wrap), and
+  check the page at a **wide** viewport (≳1500px) as well as at laptop width — that is where an
+  uncentred column gives itself away.
 
 ### What this replaces, and why
 
