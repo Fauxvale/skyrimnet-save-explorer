@@ -389,6 +389,15 @@ These are the difference between a page I can use and a data dump with a nice fo
   the "Versus" mark in 800px of dead space, and painting the sidebar's border down the middle of the panel
   — with no console error and no horizontal overflow to give it away. Prefer `.sidebar` and `.belligerent`
   over `.side`. The same trap waits in `.stat`/`.page`/`.view`/`.card`/`.row`.
+- **Use `overflow-x: clip`, never `overflow-x: hidden`, on `html`/`body`.** These two rules fight, and
+  silently: "no horizontal overflow" pushes you toward `overflow-x:hidden`, and `hidden` **breaks every
+  `position:sticky` element on the page** — sidebar and view header included. The mechanism: when one
+  overflow axis is `hidden`, the other computes from `visible` to **`auto`**, so `<html>`/`<body>` quietly
+  become scroll containers. A sticky element sticks to its *nearest scrolling ancestor*, which is then
+  `<body>` — and `<body>` never scrolls itself, the document does. Sticky resolves to doing nothing. `clip`
+  clips identically but creates no scroll container, so `overflow-y` stays `visible` and sticky works
+  against the viewport. This shipped here: the sidebar scrolled off the top, cut in half, while every other
+  check passed.
 
 #### Be honest about gaps
 
@@ -532,15 +541,23 @@ noting that off-screen gossip is reconstructed from the saved model outputs.
   offline is fine). Visiting one view proves nothing about the others; if you script the sweep, confirm
   the tool is really changing route — a mangled hash, or a navigation to the URL you're already on, will
   silently re-render the current view and pass every check while testing nothing.
-- **Then look at every view.** Screenshot each route and actually read the picture. Every other check in
-  this list is negative — absence of errors, absence of overflow — and **layout breakage is none of those
-  things**, so it sails straight through. A real regression shipped through this exact list: a war panel
-  whose belligerent columns collided with the sidebar's CSS class inherited `height:100vh` and rendered
-  ~3.5× too tall, with the "Versus" mark stranded in 800px of dead space and the sidebar's border drawn
-  down the middle of the panel. No console error, no `undefined`, no horizontal overflow, every
-  interaction working. Only looking finds that. Two smells to check by measurement as well as by eye: **a
-  container far taller than the content it holds** (something is inheriting a height it shouldn't), and **a
-  view whose text length is implausibly short** for the records it should show.
+- **Then look at every view — and look at it scrolled.** Screenshot each route and actually read the
+  picture. Every other check in this list is negative — absence of errors, absence of overflow — and
+  **layout breakage is none of those things**, so it sails straight through. A war panel once shipped whose
+  belligerent columns collided with the sidebar's CSS class, inherited `height:100vh`, and rendered ~3.5×
+  too tall, the "Versus" mark stranded in 800px of dead space and the sidebar's border drawn down the middle
+  of the panel — no console error, no `undefined`, no horizontal overflow, every interaction working. Only
+  looking finds that.
+- **Scroll before you believe it.** A screenshot at the top of the page is not evidence the page works: at
+  `scrollY = 0` a broken `position:sticky` element is pixel-identical to a working one. This exact hole let
+  a broken sidebar ship *after* the rule above was already being followed — the page was screenshotted, it
+  looked perfect, and the sidebar scrolled away and got cut in half the moment a reader moved. So: on a
+  long view, **scroll down and confirm the sidebar and the view header are still pinned at `top: 0` and the
+  sidebar's footer is still on screen**; on narrow screens, the same for the sticky top bar. Assert it
+  (`getBoundingClientRect().top === 0` while `scrollY > 0`), don't eyeball it.
+- Two smells to measure as well as eyeball: **a container far taller than the content it holds** (something
+  is inheriting a height it shouldn't), and **a view whose text length is implausibly short** for the
+  records it should show.
 - Confirm every interaction: sidebar routing and the **back button**; UMAP/PCA toggle; the constellation's
   actor chips dimming stars; **memory search** (hits highlighted, live count right, and markup in the
   query rendered as text rather than injected); type/mind/sort filters; **paging**; the OmniSight

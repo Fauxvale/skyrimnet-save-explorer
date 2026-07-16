@@ -120,6 +120,15 @@ nice font.
   the "Versus" mark in 800px of dead space, and painted the sidebar's border down the middle of the panel —
   with no console error and no horizontal overflow to give it away. Prefer `.sidebar` and `.belligerent`
   over `.side`. The same trap is waiting in `.side`/`.stat`/`.page`/`.view`/`.card`/`.row`.
+- **Use `overflow-x: clip`, never `overflow-x: hidden`, on `html`/`body`.** These two rules fight each
+  other and the fight is silent: "no horizontal overflow" (below) pushes you toward `overflow-x:hidden`,
+  and `hidden` **breaks every `position:sticky` element on the page** — the sidebar and the view header
+  included. The mechanism: when one overflow axis is `hidden`, the other computes from `visible` to
+  **`auto`**, so `<html>`/`<body>` quietly become scroll containers. A sticky element sticks to its
+  *nearest scrolling ancestor*, which is then `<body>` — and `<body>` never scrolls itself, the document
+  does. So sticky resolves to doing nothing at all. `clip` clips exactly the same way but creates no
+  scroll container, leaving `overflow-y: visible` and sticky working against the viewport. This shipped
+  here: the sidebar scrolled off the top of the page, cut in half, while every other check passed.
 
 ### Be honest about gaps
 
