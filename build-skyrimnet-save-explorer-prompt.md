@@ -307,8 +307,18 @@ screen and let me choose one.
 - **Views and routing** — each section is a view on a **hash route** (`#/memories`, `#/captures`). Only
   the active view is in the DOM; the **back button must work**; no hash lands on Overview.
 - **View header** — sticky atop the content column: a small accent kicker naming the half of the journal
-  ("A SkyrimNet Field Journal" / "An IntelEngine Dispatch"), the view title, an italic caption. Overview
-  is the exception — it carries its own masthead.
+  ("A SkyrimNet Field Journal" / "An IntelEngine Dispatch"), the view title, an italic caption. The bar
+  spans the full width beside the sidebar — its border and blur are meant to reach the edge — but its text
+  aligns to the content column, not to the bar. Overview is the exception — it carries its own masthead.
+- **Content column** — cap the column (~`1180px` reads well) and **centre it** in the space beside the
+  sidebar. A `max-width` alone is not enough: without `margin-inline:auto` the column stays pinned left and
+  the surplus piles up as dead space on the right, which is glaring on my wide monitor and easy to miss if
+  you only check at laptop width. The view header must resolve to the **same** cap and inset, or its title
+  sits left of the content beneath it on every view. Put the cap on a wrapper *inside* the header, not on
+  the header itself, so the bar stays full-bleed while its text lines up; with `box-sizing:border-box` that
+  wrapper has to repeat the column's horizontal padding for the two left edges to meet. Give the
+  narrow-screen rules the same treatment — moving the header's padding onto the wrapper means the mobile
+  override moves with it.
 - **Overview is the landing view.** It answers "what happened in this run?" without scrolling far:
   - a **masthead** — the monumental title card: italic "The Adventures of", my name set **large**
     (uppercase display face), the italic subtitle. Only here; on every view it would cost a screenful each
@@ -322,7 +332,9 @@ screen and let me choose one.
 - **Narrow screens (≲900px)** — the sidebar becomes an **off-canvas drawer**: a sticky top bar with the
   current view name and a hamburger; tapping slides the sidebar in over a scrim. Scrim, entry, or Escape
   closes it.
-- Confirm **no horizontal overflow** at any width (let long captions wrap).
+- Confirm **no horizontal overflow** at any width (let long captions wrap), and check the page at a
+  **wide** viewport (≳1500px) as well as at laptop width — that is where an uncentred column gives itself
+  away.
 
 #### What this replaces, and why
 
