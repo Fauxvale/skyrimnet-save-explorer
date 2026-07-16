@@ -11,16 +11,19 @@ your databases are never modified — only read.
 
 ## What it produces
 
-One double-clickable `.html` file with **two tabs**:
+One double-clickable `.html` file, built as an **app shell**: a sidebar on the left, one view at a time.
+It opens on an **Overview** — the title card, your headline numbers, and panels summarising each section
+— and the sidebar carries the rest, with a record count beside every entry.
 
 ### SkyrimNet — the lived experience
 - **Event timeline** — a chronological record of the character's run
 - **Memory constellation** — an interactive visualization of the character's memories, laid out from
   their embedding projections
-- **Memories** — the memories themselves
+- **Memories** — the memories themselves, with full-text search, type and per-mind filters, and paging
 - **Kill ledger** — combat and death records
 - **Diary** — the character's diary entries
-- **OmniSight field notes** — a distilled "portrait of the land" plus matched capture images
+- **OmniSight field notes** — a distilled "portrait of the land" plus matched capture images, in a
+  lazy-loaded grid with a keyboard-navigable lightbox
 
 ### IntelEngine — the political layer
 - **Faction relationships** — how the world's factions regard one another
@@ -30,7 +33,12 @@ One double-clickable `.html` file with **two tabs**:
 
 ### Throughout
 - A single offline HTML file — no build step, no frameworks, no external libraries
-- Collapsible sections and a floating table of contents that reflows into a mobile bar on narrow screens
+- One view at a time, hash-routed, with a working back button — never one endless scroll, even though a
+  real save runs to hundreds of memories and captures
+- A sidebar that collapses into a drawer on narrow screens
+- Sections with no data are left out entirely — no empty panels
+- Records the data can't place (a memory with a corrupted timestamp, say) are shown and explained rather
+  than quietly dropped
 - Optional embedding of your OmniSight screenshots
 
 ## Requirements

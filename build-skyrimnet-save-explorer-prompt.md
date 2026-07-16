@@ -2,17 +2,23 @@ Build me a **SkyrimNet Save Explorer**: one self-contained, offline HTML file th
 AI-mod playthrough (the **SkyrimNet** and **IntelEngine** mods) into an elegant, interactive "save
 explorer" — an illuminated field journal for a single character's run.
 
-The page has **two tabs**:
+The page is an **app shell**: a sidebar on the left, one view at a time in the content column, addressed
+by hash routes. It lands on an **Overview** — the title card, the headline stats, and panels summarising
+each section — and the sidebar groups the rest:
 
 - **SkyrimNet** — the character's lived experience: event timeline, an interactive "constellation" of
-  memories, the memories themselves, a kill ledger, a diary page, and OmniSight field notes (a distilled
+  memories, the memories themselves, a kill ledger, a diary, and OmniSight field notes (a distilled
   "portrait of the land" + matched capture images), plus any other notable story beats found in the logs.
 - **IntelEngine** — the political layer: faction relationships, a chronicle of provocations, off-screen
   gossip, and — **only if my save actually has one** — an ongoing war and its battles.
 
-Every section is **collapsible**, there is a **floating table of contents** that reflows into a mobile
-bar + overlay on narrow screens, and everything — name, in-game day count, every count and label — must
-be **derived from my uploaded data**. Nothing is hardcoded from any example.
+Each view owns its own search, filters and paging; a view with no data is left out of the sidebar
+entirely. Everything — name, in-game day count, every count and label — must be **derived from my uploaded
+data**. Nothing is hardcoded from any example.
+
+**It must not be one long scroll.** My save runs to hundreds of memories and captures. Don't render every
+table onto one page, and don't copy the shell of an older example — the two-tab bar, the floating
+roman-numeral TOC and the collapsible sections are gone. Phase 3 explains what replaced them and why.
 
 **Do not build anything yet.** First collect my files, one at a time, per the protocol below.
 
@@ -164,8 +170,8 @@ Build the JSON payloads to embed. Derive everything from my files.
   - **Followers & tasks** (grey): anything else
 - **`memories`** — array; per memory: `content`, `actor` (resolved via `uuid_mappings`), `emotion`,
   `location`, `imp` (= `importance_score`), `type` (= `memory_type`), `day` (in-game day label from
-  `game_time`/related event), `gt` (raw `game_time`, for sorting), and 2-D coords `x, y` (PCA) and
-  `ux, uy` (UMAP) — see the projection recipe.
+  `game_time`/related event, **or `null`** — see "Timestamp hygiene"), `gt` (raw `game_time`, for
+  sorting), and 2-D coords `x, y` (PCA) and `ux, uy` (UMAP) — see the projection recipe.
 - **`edges`** — array of `[i, j, similarity]`: for each memory, its **2 nearest neighbors** by cosine
   similarity in the full embedding space, with the similarity.
 - **`leaderboard`** — kills per killer, ranked by total. Each:
@@ -187,6 +193,37 @@ Build the JSON payloads to embed. Derive everything from my files.
 
 **Actor colours:** rank actors by memory count; the **top ~5 get distinct colours**, everyone else grey.
 Reuse this mapping everywhere an actor is coloured (constellation dots, memory rows, leaderboard names).
+
+### Timestamp hygiene — check this, don't assume it
+
+`memories.game_time` is supposed to be the in-game clock, and `gt` exists so the page can sort
+chronologically. **In real saves the column mixes units**, and passing it through unexamined makes the
+page sort wrongly and silently.
+
+Observed in a real 255-memory save: 249 rows carried an in-game clock in the range `0`–`1,281,339`, while
+**6 rows carried a Unix epoch** — `1784014205`, which decodes to a real-world date (the day the page was
+built). Wall-clock had leaked into a game-time field. Those 6 rows plus 1 row with `game_time == 0` were
+**exactly** the rows for which no day label could be resolved: `day is None` ⟺ `gt` unusable.
+
+The important part: **`gt` isn't broken, it's contaminated.** Sorting the 249 well-formed rows by `gt`
+reproduced the day order with zero inversions. Quarantine the outliers; don't abandon `gt` sorting or
+invent a different key.
+
+So, when building `memories`:
+
+1. **Classify each `game_time`** against the clock the rest of the save uses. Compute the distribution
+   first — don't hardcode a threshold from this document. A value that decodes as a plausible recent
+   real-world Unix timestamp (roughly `> 1e9`, i.e. year 2001+) is wall-clock, not game time; `0`, `NULL`
+   and non-finite values are missing; the rest is the in-game clock. The clusters sit orders of magnitude
+   apart, so the split is unambiguous — but **verify it in my data** and tell me what you found.
+2. **Emit `day: null`** for any memory whose timestamp is unusable. Don't guess a day, don't fall back to
+   the first or last day, and don't drop the memory — its `content` is still real.
+3. **Still emit `gt`** for those rows so nothing is lost, and let the page quarantine them when sorting.
+   Sorting must never place a contaminated row among dated ones.
+4. **Report it to me** in Phase 4: how many memories are undated, and why.
+
+Apply the same scepticism to any other time field. If a join depends on two time values agreeing, **check
+that they do** on my actual data before building on it, and tell me when they don't.
 
 **Computing `x,y` / `ux,uy` and edges** — do it all offline in Python; the browser only ever receives
 coordinates, edge indices, and similarity weights, never raw vectors:
@@ -226,7 +263,12 @@ The `text_factory = bytes` trick applies to any SkyrimNet DB you inspect with Py
 - **`battles`** — from `war_battles`: location, attacker/defender, result, losses each side, narrative.
   Empty/omitted when no war.
 - **`events`** — from `faction_events`: the provocation chronicle — faction pair, `event_type`,
-  `description`, signed `relation_delta`, ordered by `game_time`.
+  `description`, signed `relation_delta`, ordered by `game_time`. You may carry the raw `game_time`
+  through as a `day`, but note: **IntelEngine's clock is not SkyrimNet's clock.** `faction_events.game_time`
+  is a small numeric day counter (e.g. `3.3` … `15.4`), on a completely different scale from the in-game
+  calendar labels (`"20th of Last Seed"`) that `events_by_day` and `memories[].day` use, with **no reliable
+  mapping between them**. Don't convert one to the other, don't join IntelEngine events onto the SkyrimNet
+  timeline, and don't present a numeric day as a calendar date.
 
 ### Gossip payload (`gossipdata`)
 
@@ -247,28 +289,58 @@ responsive to mobile.
 
 ### Structure (every theme)
 
-- **Header** — centered, reading **"The Adventures of &lt;name&gt;"**: a small gold eyebrow label
-  (switches per tab, e.g. "A SkyrimNet Field Journal" / "An IntelEngine Dispatch"), a small italic serif
-  kicker **"The Adventures of"**, then the name **large and monumental** (uppercase display face). Below:
-  the italic subtitle and a row of stat blocks divided by thin rules (including Total Spend if opted in).
-- **Two tabs** (`SkyrimNet` / `IntelEngine`) swapping the visible content and the TOC.
-- **No divider ornaments between sections** — section headers alone do the work: roman numeral +
-  uppercase title + trailing hairline. (No decorative knot/rule strips — they waste vertical space.)
-- **Every section collapsible.** The header is a real toggle (`role="button"`, `tabindex="0"`,
-  `aria-expanded`, Enter/Space) with a chevron that rotates when collapsed; collapsing hides the body.
-  **Exception:** in the Constellation, the actor-filter chip row stays **outside** the collapsible body
-  ("keep-visible") so it keeps filtering the memory list (Section III) even when the constellation is
-  collapsed.
-- **Floating TOC (desktop, ≳1120px):** pinned left, **vertically centered**, with a **roman-numeral index
-  badge** per entry and a **clean active highlight** (active badge fills with accent, its label takes the
-  accent, a thin accent rule marks it); scroll-spy keeps it in sync. Main content must **shift clear of
-  the sidebar** (never overlap) and **re-center on wide screens** — e.g. give each centered column
-  `margin-left: max(<sidebar-clearance>, calc((100vw − <content-max>)/2)); margin-right:auto;`.
-- **TOC (narrow, ≲1120px):** replace the sidebar with a **sticky gradient top bar** (below the tab bar)
-  showing current tab + roman badge + section name, with a **hamburger** opening a **full-screen overlay
-  list** of all sections (roman badges, large tap targets); tapping scrolls to it and closes the overlay.
-  Scroll-spy updates the bar's label.
-- Confirm **no horizontal overflow** at any width (let section-header captions wrap).
+**The page is an app shell: a sidebar and one view at a time.** This matters. My save holds hundreds of
+records — a real run is ~255 memories, ~163 captures, ~54 gossip records. Printing every table onto one
+scroll, expanded, means I scroll past hundreds of rows to reach anything, and the page ends up organised
+**by database table rather than by anything I care about**. Don't do that. Give each section its own
+screen and let me choose one.
+
+- **Sidebar (desktop, ≳900px)** — pinned full height on the left, with its own scroll.
+  - **Brand block** at the top: a small italic serif kicker **"The Adventures of"**, my character's name
+    in the uppercase display face beneath it, then a mono line with the in-game date span, closed by a
+    thin rule.
+  - **Nav entries** in groups: an ungrouped **Overview** first, then **SkyrimNet**, then **IntelEngine**
+    (each group labelled with a small mono all-caps header). Every entry shows its **record count** on the
+    right — the counts are my map of where the substance is.
+  - **Active entry** takes an accent left rule, an accent label, and an accent count.
+  - A small footer names the source database files.
+- **Views and routing** — each section is a view on a **hash route** (`#/memories`, `#/captures`). Only
+  the active view is in the DOM; the **back button must work**; no hash lands on Overview.
+- **View header** — sticky atop the content column: a small accent kicker naming the half of the journal
+  ("A SkyrimNet Field Journal" / "An IntelEngine Dispatch"), the view title, an italic caption. Overview
+  is the exception — it carries its own masthead.
+- **Overview is the landing view.** It answers "what happened in this run?" without scrolling far:
+  - a **masthead** — the monumental title card: italic "The Adventures of", my name set **large**
+    (uppercase display face), the italic subtitle. Only here; on every view it would cost a screenful each
+    time;
+  - a **stat row** from `stats` (including Total Spend if I opted in);
+  - any **data notices** (see "Be honest about gaps");
+  - a grid of **panels** summarising each section and linking into it — activity-by-day bars, busiest
+    minds, heaviest memories, a few captures, the war if there is one.
+- **Conditional views** — a view with no data is **left out of the nav entirely**. No empty panels, no
+  "no war found" placeholders. Nothing renumbers, because nothing is numbered.
+- **Narrow screens (≲900px)** — the sidebar becomes an **off-canvas drawer**: a sticky top bar with the
+  current view name and a hamburger; tapping slides the sidebar in over a scrim. Scrim, entry, or Escape
+  closes it.
+- Confirm **no horizontal overflow** at any width (let long captions wrap).
+
+#### What this replaces, and why
+
+If you've seen an older version of this page — a two-tab bar, a floating roman-numeral TOC that reflowed
+into a mobile bar + overlay, collapsible sections on one long scroll — **that's all gone. Don't copy it.**
+
+- **Tabs → sidebar groups.** Two tabs hid half the journal behind a click and still left each tab a long
+  scroll. Now every section is one click from everywhere.
+- **Floating TOC → the sidebar.** The TOC navigated a scroll that no longer exists. A real column can't
+  overlap the content or need re-centering, which the old approach had to work around.
+- **Collapsible sections → routing.** Collapsing was a workaround for too much on one page. With one view
+  at a time there's nothing to collapse — drop the chevrons and `aria-expanded` toggles.
+- **Roman numerals → record counts.** Numerals implied a reading order a routed shell doesn't have. A
+  count ("255", "163") tells me something they never did.
+- **The "keep-visible" chip row → per-view filters.** That hack existed only because the constellation's
+  chips also drove the memory list further down the same scroll. Separate views now: the constellation
+  owns its filter, Memories owns its own. Drop the exception and the "the filter above also filters this
+  list" note.
 
 ### Look & feel — ask me which theme
 
@@ -285,48 +357,90 @@ responsive to mobile.
 
 - **Fonts:** `Oswald` (uppercase, letter-spaced headings/labels), `Crimson Pro` (serif body),
   `JetBrains Mono` (numbers/metadata), via Google Fonts `<link>`.
-- **Palette (`:root`):** `--bg:#14161a; --panel:#1a1d23; --text:#e8e4da; --dim:#98938a; --gold:#c9a45c;
-  --steel:#7da3b8; --blood:#b0584e; --moss:#8ba06b;` plus hairlines like `rgba(232,228,218,.16)`.
+- **Palette (`:root`):** `--bg:#14161a; --panel:#1a1d23; --panel2:#20242b; --text:#e8e4da; --dim:#98938a;
+  --gold:#c9a45c; --steel:#7da3b8; --blood:#b0584e; --moss:#8ba06b; --violet:#a98cc0; --amber:#cf9a54;`
+  plus hairlines like `rgba(232,228,218,.16)`.
 - **Category colours:** Dialogue=gold, Death=blood, Thoughts=steel, Trade/world=moss, Followers=dim/grey.
-- **Motifs:** centered header, "double rule" hairlines, roman-numeral section headers with trailing
-  hairlines, the collapsible chevron, the floating TOC / mobile bar above.
+  Reserve **amber** for data-gap notices, so a gap never reads as content.
+- **Motifs:** the monumental Overview masthead, "double rule" hairlines, uppercase letter-spaced view
+  titles with a trailing hairline, the accent-marked active sidebar entry.
 
 *(Everything below is the structural baseline for whichever theme I pick.)*
 
-### SkyrimNet tab — sections
+### Rules every view obeys
 
-1. **The Timeline** *(e.g. "Seven Days in Whiterun Hold" — derive the hold if one dominates)* — one
-   vertical stacked bar per in-game day, each segment a category colour, bar height ∝ that day's event
-   count, with a day label + total and a colour legend. From `events_by_day`.
-2. **Constellation of Memory** — an SVG scatter of every memory. Position from the projection; **dot size
+These are the difference between a page I can use and a data dump with a nice font.
+
+- **Any list longer than ~25 records is paged or virtualized.** Never print 255 rows at once. Show a live
+  "N of M shown" count.
+- **Any collection of images is lazy-loaded** (`loading="lazy"`) and rendered on demand — don't build 163
+  `<img>` tags to show 12.
+- **Every image opens in a lightbox.** An image I can't enlarge is a thumbnail of nothing.
+- **Any filter over a long list is searchable**, not a fixed chip row. Chips suit a handful of categories;
+  they can't address 80 actors.
+- **Escape every piece of model text before it reaches the DOM** — memory content, rumors and
+  descriptions may contain `<`, `&`, or markup. When highlighting a search hit, escape **first**, then
+  wrap the match, or a crafted query becomes live markup.
+- **Never silently drop a record.**
+
+#### Be honest about gaps
+
+Some records can't be placed — a memory whose timestamp is unusable has no day (see "Timestamp hygiene").
+**Don't drop them and don't guess.** Give them a visible home (an "Undated" group at the end of the list,
+an explicit bucket for unplaceable captures). Where it's worth explaining, render a short **notice**
+(amber, distinct from content) on Overview or at the head of the affected list, saying how many records
+are affected and why — **with numbers you actually computed**. Tell me the same in chat at handover.
+
+### SkyrimNet views
+
+1. **Overview** — see Structure above.
+2. **The Timeline** *(title it from my data, e.g. "Fourteen Days")* — one vertical stacked bar per in-game
+   day, each segment a category colour, bar height ∝ that day's event count, with a day label + total and
+   a colour legend. From `events_by_day`.
+3. **Constellation of Memory** — an SVG scatter of every memory. Position from the projection; **dot size
    ∝ importance**; **colour by actor** (top ~5 distinct, rest grey). Draw `edges` as faint lines (opacity
    ∝ similarity). Interactions: a **UMAP/PCA toggle** (updates positions + caption; report PCA variance
-   fraction), **actor filter chips** (All / top actors / Everyone else) that dim non-matching stars **and**
-   filter the Section III list, **hover tooltips** (memory text + meta), and **draggable stars** with a
-   light spring sim (home-spring + edge-spring + damping) so neighbors tug along. If reduced motion, place
-   stars statically. The **actor-filter chip row stays visible when this section is collapsed**. Add a
-   small **mobile caption** beneath the scatter pointing to Section III (same memories as a readable list).
-3. **The Memories We Made** — memories as a list, grouped by in-game day (each day heading shows its
-   memory count and, if available, a one-line day summary). Each row: actor + `type · emotion` left, the
-   memory text with location beneath in the middle, an **importance bar** (labelled `imp <score>`) right.
-   Two chip rows: **type filters** (All types + one per `memory_type`, with counts) and a **sort toggle**
-   (chronological / by importance); the Constellation's actor filter applies here too. Include a short
-   **note that the mind filter above also filters this list** (the two views stay in sync). Show a live
-   "N of M memories shown" note.
-4. **Blood Leaderboard** — `leaderboard` as a ranked killer table: rank number (`01`, `02`, …), killer
+   fraction), **actor filter chips** (All / top actors / Everyone else) that dim non-matching stars,
+   **hover tooltips** (memory text + meta), and **draggable stars** with a light spring sim (home-spring +
+   edge-spring + damping) so neighbors tug along. If reduced motion, place stars statically. Add a caption
+   pointing narrow-screen readers to **Memories**, where the same records read as a list.
+4. **The Memories We Made** — memories as a list. The densest view in the journal; it needs real tools:
+   - **Full-text search** over content (match actor and location too), **hits highlighted**, with a live
+     "N of M memories shown" count.
+   - **Type filters** — chips per `memory_type` with counts, plus "All types".
+   - **A mind filter reaching every actor** — a searchable picker over the full actor list with per-actor
+     counts, not a chip row of the top 5. A run has ~80 minds; five chips address 6% of them. Build the
+     filter input **once** and re-render only the list beneath it as I type: rebuilding the input each
+     keystroke re-creates the element with the caret at index 0, so typing "nazeem" yields "meezan" and
+     matches nothing.
+   - **A sort toggle** — chronological or by importance.
+   - **Paging** (~25 rows), paging over **rows, not day groups**, or a 50-memory day blows past the page.
+   - **Grouping** — sorted chronologically, group by in-game day with a heading and count, in day-list
+     order, sorted within a day by `gt`. Undated memories form their own group **at the end**, never mixed
+     into a real day.
+   - Each row: actor + `type · emotion` left, the memory text with location beneath in the middle, an
+     **importance bar** (labelled `imp <score>`) right.
+5. **Blood Leaderboard** — `leaderboard` as a ranked killer table: rank number (`01`, `02`, …), killer
    name (coloured by actor), **total kills**, a horizontal **stacked bar segmented by victim category**
    (People / Undead / Wildlife / Monsters / Dragon, each its colour) with a matching legend above, and a
    row of **victim chips** (`Bandit ×3`, `Draugr ×2`, …).
-5. **The Diary** — each entry as a centered "journal page": a bordered/inset panel, header with author and
-   place, a **drop-cap** first letter, paragraphs split on blank lines, `*starred*` phrases as italic
-   emphasis. If several, present as a book-like stack that can be flipped through. If no diary entry, omit.
-6. **OmniSight Field Notes** — open with a framed **"A Portrait of the Land"** summary panel: the
+6. **The Diary** — each entry as a "journal page": a bordered/inset panel, header with author and place, a
+   **drop-cap** first letter, paragraphs split on blank lines, `*starred*` phrases as italic emphasis.
+   **Render them as a simple stack of pages** — no page-flip widget with prev/next/indicator chrome. Saves
+   hold a handful of entries; flip controls cost more than they give and hide entries behind clicks. If no
+   diary entry, omit the view.
+7. **OmniSight Field Notes** — open with a framed **"A Portrait of the Land"** summary panel: the
    `omni_summary` prose (drop-capped first paragraph, a mono footer naming capture count + date span),
    distilled from **all** captures and grounded only in them. Below, a grid of cards from `screenshots`:
-   each with its matched `omnisight-images/` image, subject name, location/metadata line, and description,
-   with a "show more"/"show all" control if there are many.
+   each with its matched `omnisight-images/` image, subject name, location/metadata line, and description.
+   Then:
+   - **Lazy-load every image**; render an initial batch (~24) with a "show all N captures" control.
+   - **A lightbox.** Clicking or keyboard-activating a card opens the full image with its name, metadata
+     and description; **Left/Right** move through the set, **Escape** closes, focus returns to the card.
+     Cards are real controls (`role="button"`, `tabindex="0"`, Enter/Space).
+   - Captures that couldn't be placed on a day get their own labelled group rather than being dropped.
 
-### IntelEngine tab — sections
+### IntelEngine views
 
 1. **The Great Powers** — `relations` as **bars sliding along a track**:
    - Sort rows by score **ascending** (most hostile / the war at top).
@@ -341,9 +455,9 @@ responsive to mobile.
    - Caption in the spirit of: *relations from −100 (open war) to +100 (alliance); each pair drifts as the
      world generates off-screen politics; hover a name for its leaders and seat.*
 
-> **Sections 2–3 are conditional on a war.** If no war (Step 2), **omit both the war panel and battles
-> list entirely** — no empty panel, no placeholder — and renumber so the tab reads naturally (Relations,
-> Provocations, Whispers).
+> **The War and Battles views are conditional.** If no war (Step 2), **omit both entirely** — no empty
+> panel, no placeholder — and leave them out of the sidebar. The rest of the IntelEngine group is
+> unaffected.
 
 2. **The War** *(only if a war exists)* — a panel for the active `war`: an intro note (who declared it and
    when, battles fought, victor status), then the two belligerents either side of a `Versus`, each with
@@ -368,38 +482,52 @@ responsive to mobile.
 
    Chips are **All** + those three, each with its count. Derive matching terms from the data (player name
    from `uuid_mappings`; faction names/leaders/holds from IntelEngine + `political_state.json`) rather than
-   hardcoding. If no log was uploaded, hide this section and note why.
+   hardcoding. If no log was uploaded, omit this view.
+
+> **IntelEngine keeps its own clock.** `faction_events` carry IntelEngine's own numeric day (e.g. `3.3` …
+> `15.4`), which is **not** the in-game calendar (`"20th of Last Seed"`) the timeline and memories use.
+> There's no reliable mapping between the two in the data. Never join them, never put IntelEngine events
+> on the SkyrimNet timeline, and never render a numeric day as a calendar date. If you surface the number,
+> label it as IntelEngine's own.
 
 ### Beyond the standard layout
 
 The above is the standard build, but my save is my own. If while reading my data you find something
-**genuinely notable that none of those sections capture** — a significant world event, completed quest
-arc, dragon-soul or bounty milestone, distinctive populated table — **don't silently drop it or cram it
-into an ill-fitting section.** Tell me what you found and **ask whether I'd like a new section for it.**
-If yes, design it in the same aesthetic (roman-numeral header, shared palette/fonts, its own JSON
-payload, collapsible) and add it to the right tab and the TOC. Only add sections I've approved.
+**genuinely notable that none of those views capture** — a significant world event, completed quest arc,
+dragon-soul or bounty milestone, distinctive populated table — **don't silently drop it or cram it into
+an ill-fitting view.** Tell me what you found and **ask whether I'd like a view for it.** If yes, design
+it in the same aesthetic (shared palette/fonts, its own JSON payload, its own sidebar entry in the right
+group). Only add views I've approved.
 
 ### Footer
 
-A short italic footer naming the source database files (actual uploaded filenames) and noting that
-off-screen gossip is reconstructed from the saved model outputs.
+A short italic footer in the sidebar naming the source database files (actual uploaded filenames) and
+noting that off-screen gossip is reconstructed from the saved model outputs.
 
 ---
 
 ## Phase 4 — Verify before handing over
 
-- Confirm it opens offline; **render it** (headless browser ideal) and check every section populates
-  (no empty panels, `undefined`, `NaN`, or console errors — a blocked Google Fonts request offline is
-  fine). If OmniSight image embeds were requested, confirm the images are present in `omnisight-images/`
-  and render in the cards.
-- Confirm every interaction: tab switching; UMAP/PCA toggle; actor/type/sort filters and the live count;
-  diary flip; OmniSight show-more; whisper filters; **every section collapses and re-expands**; and the
-  **Constellation's actor chips stay visible and keep filtering the memory list while collapsed**.
-- Confirm layout: **no horizontal overflow** at desktop and mobile; on desktop the **floating TOC never
-  overlaps content** and content **re-centers on wide screens**; on narrow the **mobile TOC bar +
-  hamburger overlay** work.
+- Confirm it opens offline; **render it** (headless browser ideal) and **visit every route** — each view
+  populates, with no empty panels, `undefined`, `NaN`, or console errors (a blocked Google Fonts request
+  offline is fine). Visiting one view proves nothing about the others; if you script the sweep, confirm
+  the tool is really changing route — a mangled hash that silently re-renders the landing view will pass
+  every check while testing nothing.
+- Confirm every interaction: sidebar routing and the **back button**; UMAP/PCA toggle; the constellation's
+  actor chips dimming stars; **memory search** (hits highlighted, live count right, and markup in the
+  query rendered as text rather than injected); type/mind/sort filters; **paging**; the OmniSight
+  show-all; the **capture lightbox** (opens, Left/Right move, Escape closes, focus returns); whisper
+  filters.
+- Confirm every capture image resolves — count the files in `omnisight-images/` against the payload, and
+  check the lightbox shows a decoded image, not a broken reference.
+- Confirm layout: **no horizontal overflow** at desktop and mobile; on narrow screens the drawer opens and
+  the scrim/Escape close it.
 - Confirm the name, day count, "The Adventures of …" title, and every stat came from **my** data — not
   any example — and the OmniSight summary is grounded in my actual captures.
-- Tell me plainly what you fell back on (e.g. "UMAP not installed, used t-SNE", "no log provided, gossip
-  omitted", "no OmniSight images, text-only capture cards") rather than papering over gaps.
+- Confirm **nothing was silently dropped**: undated memories appear in their own group, unplaceable
+  captures have a home, and any notice states counts you actually computed.
+- Tell me plainly what you fell back on and what my data couldn't support — e.g. "UMAP not installed, used
+  t-SNE"; "no log provided, gossip omitted"; "no OmniSight images, text-only capture cards"; "6 memories
+  carry a real-world timestamp instead of the in-game clock and 1 has none, so 7 are grouped as Undated".
+  Report the real numbers from my save, not these examples. Papering over a gap is worse than the gap.
 - Then give me the finished `.html` file.
