@@ -113,6 +113,13 @@ nice font.
   are model output and may contain `<`, `&`, or markup. When highlighting a search hit, escape **first**
   and then wrap the match — otherwise a crafted query becomes live markup.
 - **Never silently drop a record.**
+- **One file means one CSS namespace — name every class for what it is.** This page puts a full-height
+  sidebar and a war panel of two belligerents in the same stylesheet, and generic names collide. Calling
+  both `.side` is a real bug that has shipped here: the belligerent columns inherited the sidebar's
+  `height:100vh; display:flex; border-right`, which blew the war panel to ~3.5× its proper height, stranded
+  the "Versus" mark in 800px of dead space, and painted the sidebar's border down the middle of the panel —
+  with no console error and no horizontal overflow to give it away. Prefer `.sidebar` and `.belligerent`
+  over `.side`. The same trap is waiting in `.side`/`.stat`/`.page`/`.view`/`.card`/`.row`.
 
 ### Be honest about gaps
 
@@ -198,9 +205,21 @@ do not guess.**
 > **omit both entirely** — no empty panel, no placeholder — and leave them out of the sidebar. The rest of
 > the IntelEngine group is unaffected.
 
-2. **The War** *(only if a war exists)* — a panel for the active `war`: an intro note (who declared it and
-   when, battles fought so far, victor status), then the two belligerents either side of a `Versus`, each
-   with **morale** and **strength** gauges (0–100 bars) and their leaders.
+2. **The War** *(only if a war exists)* — one panel per entry in `war`, each with an intro note (who
+   declared it and when, battles fought so far, victor status), then the two belligerents either side of a
+   `Versus`, each with **morale** and **strength** gauges (0–100 bars) and their leaders.
+   - **`war` is a list, and a save really can hold several.** Don't assume one. If there is more than one,
+     **title the view "The Wars"**, sort any **ongoing war first** (it's the live situation), and give each
+     panel its own header naming its belligerents plus an ongoing/victor flag — otherwise several wars read
+     as one undifferentiated blur.
+   - **The declaration is model prose and usually has no terminal punctuation.** Appending the outcome to
+     it produces run-ons like *"…drive the 'Elven puppeteers' from Skyrim Concluded after 3 battles"*.
+     Strip trailing punctuation and add your own separator. The same applies anywhere you concatenate
+     model text with your own sentence.
+   - Phrase the outcome from the actual numbers: a war with no battles yet is *"No battles fought yet"*,
+     not *"the war rages on — 0 battles fought"*.
+   - On a narrow screen the two belligerents **stack**; side by side leaves ~150px each, which wraps a
+     faction name onto two lines and squashes the gauges.
 3. **Battles** *(only if a war exists)* — `battles` rows: location, attacker/defender, result, each
    side's losses, and the narrative.
 4. **Chronicle of Provocations** — `events` rows in time order: an event-type tag, the description, the

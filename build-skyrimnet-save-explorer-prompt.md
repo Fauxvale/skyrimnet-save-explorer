@@ -382,6 +382,13 @@ These are the difference between a page I can use and a data dump with a nice fo
   descriptions may contain `<`, `&`, or markup. When highlighting a search hit, escape **first**, then
   wrap the match, or a crafted query becomes live markup.
 - **Never silently drop a record.**
+- **One file means one CSS namespace — name every class for what it is.** This page puts a full-height
+  sidebar and a war panel of two belligerents in one stylesheet, and generic names collide. Calling both
+  `.side` is a real bug that has shipped here: the belligerent columns inherited the sidebar's
+  `height:100vh; display:flex; border-right`, blowing the war panel to ~3.5× its proper height, stranding
+  the "Versus" mark in 800px of dead space, and painting the sidebar's border down the middle of the panel
+  — with no console error and no horizontal overflow to give it away. Prefer `.sidebar` and `.belligerent`
+  over `.side`. The same trap waits in `.stat`/`.page`/`.view`/`.card`/`.row`.
 
 #### Be honest about gaps
 
@@ -459,9 +466,21 @@ are affected and why — **with numbers you actually computed**. Tell me the sam
 > panel, no placeholder — and leave them out of the sidebar. The rest of the IntelEngine group is
 > unaffected.
 
-2. **The War** *(only if a war exists)* — a panel for the active `war`: an intro note (who declared it and
+2. **The War** *(only if a war exists)* — one panel per entry in `war`: an intro note (who declared it and
    when, battles fought, victor status), then the two belligerents either side of a `Versus`, each with
    **morale** and **strength** gauges (0–100 bars) and their leaders.
+   - **`war` is a list, and my save really may hold several.** Don't assume one. With more than one,
+     **title the view "The Wars"**, sort any **ongoing war first** (it's the live situation), and give each
+     panel a header naming its belligerents plus an ongoing/victor flag — otherwise several wars read as
+     one undifferentiated blur.
+   - **The declaration is model prose and usually has no terminal punctuation.** Appending the outcome to
+     it produces run-ons like *"…drive the 'Elven puppeteers' from Skyrim Concluded after 3 battles"*.
+     Strip trailing punctuation and add your own separator. Same anywhere you concatenate model text with
+     your own sentence.
+   - Phrase the outcome from the actual numbers: a war with no battles yet is *"No battles fought yet"*,
+     not *"the war rages on — 0 battles fought"*.
+   - On a narrow screen the two belligerents **stack**; side by side leaves ~150px each, which wraps a
+     faction name onto two lines and squashes the gauges.
 3. **Battles** *(only if a war exists)* — `battles` rows: location, attacker/defender, result, each
    side's losses, narrative.
 4. **Chronicle of Provocations** — `events` rows in time order: event-type tag, description, faction pair,
@@ -511,8 +530,17 @@ noting that off-screen gossip is reconstructed from the saved model outputs.
 - Confirm it opens offline; **render it** (headless browser ideal) and **visit every route** — each view
   populates, with no empty panels, `undefined`, `NaN`, or console errors (a blocked Google Fonts request
   offline is fine). Visiting one view proves nothing about the others; if you script the sweep, confirm
-  the tool is really changing route — a mangled hash that silently re-renders the landing view will pass
-  every check while testing nothing.
+  the tool is really changing route — a mangled hash, or a navigation to the URL you're already on, will
+  silently re-render the current view and pass every check while testing nothing.
+- **Then look at every view.** Screenshot each route and actually read the picture. Every other check in
+  this list is negative — absence of errors, absence of overflow — and **layout breakage is none of those
+  things**, so it sails straight through. A real regression shipped through this exact list: a war panel
+  whose belligerent columns collided with the sidebar's CSS class inherited `height:100vh` and rendered
+  ~3.5× too tall, with the "Versus" mark stranded in 800px of dead space and the sidebar's border drawn
+  down the middle of the panel. No console error, no `undefined`, no horizontal overflow, every
+  interaction working. Only looking finds that. Two smells to check by measurement as well as by eye: **a
+  container far taller than the content it holds** (something is inheriting a height it shouldn't), and **a
+  view whose text length is implausibly short** for the records it should show.
 - Confirm every interaction: sidebar routing and the **back button**; UMAP/PCA toggle; the constellation's
   actor chips dimming stars; **memory search** (hits highlighted, live count right, and markup in the
   query rendered as text rather than injected); type/mind/sort filters; **paging**; the OmniSight
